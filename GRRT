@@ -1,0 +1,658 @@
+# Define the Ray Tracing algorithm
+
+def ray_tracing(n_grid, point):
+    
+    # Choose the specific subgrid
+    small_grid = divided_grid[n_grid]
+         
+    # Define the value of x0_ray and y0_ray for each run
+    x0_ray = small_grid[point][0]
+    y0_ray = small_grid[point][1]
+    
+    print('Run started for t_obs=',t_obs,', x0_ray=',x0_ray,"and y0_ray=",y0_ray, flush=True)
+    
+    # Calculate the photon's initial position in the Black Hole's coordinate system, (x,y,z) -> (x',y',z')
+    x0_BH = x_BH(x0_ray, y0_ray)
+    y0_BH = y_BH(x0_ray, y0_ray)
+    z0_BH = z_BH(x0_ray, y0_ray)
+    #print("\nx0_BH=",x0_BH,"y0_BH=",y0_BH,"z0_BH=",z0_BH)
+    
+    # Calculate the photon's initial position in Boyer-Lindquist coordinates, (x',y',z') -> (r,θ,φ) 
+    r0 = r_init(x0_BH, y0_BH, z0_BH)
+    theta0 = theta_init(r0, z0_BH)
+    phi0 = phi_init(x0_BH, y0_BH, z0_BH)
+    #print("\nr0=",r0,"θ0=",theta0,"φ0=",phi0)
+    
+    # Calculate the photon's initial velocity (r',θ',φ')
+    rdot0 = rdot_init(r0, theta0, phi0)
+    thetadot0 = thetadot_init(r0, theta0, phi0)
+    phidot0 = phidot_init(r0, theta0, phi0)
+    
+    # Calculate the photon's initial four-momentum components p_r, p_θ
+    pr0 = Sigma(r0,theta0)*rdot0/Delta(r0)
+    ptheta0 = Sigma(r0,theta0)*thetadot0
+    #print("\npr0=",pr0,"pθ0=",ptheta0,"φ'=",phidot0)
+    
+    # Calculate the photon's initial conditions p_t = E, p_φ = Lz, t'
+    E = E_init(r0, theta0, phi0, rdot0, thetadot0, phidot0)
+    Lz = Lz_init(r0, theta0, phi0, phidot0, E)
+    tdot0 = tdot_init(r0, theta0, phi0, E, Lz)
+    #print("\nE=",E,"Lz=",Lz)
+    
+    # Calculate the value of Carter's constant Q0
+    Q0 = Q_Carter(r0, theta0, ptheta0, E, Lz)
+    #print("\nQ=",Q0)
+    
+    # Keep track of Carter's constant during integration
+    Q = []
+    Q.append(Q0)
+    
+    # Initialize the error parameter
+    error = 0
+    
+    # Define the system of equations for the ray's trajectory
+    def system(t, y):
+        r, theta, phi, p_r, p_theta, time= y
+        # Keep track of Carter's constant during integration
+        Q.append(Q_Carter(r, theta, p_theta, E, Lz))
+        # Report an error if the value changes
+        if abs(Q0-Q_Carter(r, theta, p_theta, E, Lz))>1e-10:
+            error = 1
+        dydt = [r_dot(r, theta, p_r, p_theta, E, Lz), theta_dot(r, theta, p_r, p_theta, E, Lz), phi_dot(r, theta, p_r, p_theta, E, Lz), pr_dot(r, theta, p_r, p_theta, E, Lz), ptheta_dot(r, theta, p_r, p_theta, E, Lz), t_dot(r, theta, p_r, p_theta, E, Lz)]  
+        return dydt
+    
+    # Define initial and maximum integration time
+    t0 = 0.
+    tstop = pow(10,10)
+    
+    # Define the ray's initial conditions
+    y0 = [r0, theta0, phi0, pr0, ptheta0, t0]
+    
+    # Choose the integration scheme
+    #backend = 'dopri5'
+    backend = 'dop853'
+    
+    # Initialize the ode solver
+    solver = ode(system).set_integrator(backend, nsteps=1., rtol=1e-100)
+    #rtol=1e-30
+    solver.set_initial_value(y0, t0)
+    
+    # Suppress Fortran-printed warning
+    solver._integrator.iwork[2] = -1
+    
+    # Initialize parameters checking for photons trapped extremely close to the Event Horizon
+    # Parameter 'trapped' counts the number of times the orbital parameters remain unchanged during the integration
+    # If the number exceeds the Integration Tolerance 'int_tol', the orbit is considered plunging
+    trapped = 0
+    int_tol = 20
+    # Parameter 'r_previous' keeps track of the photon's radial distance, r, from the Black Hole
+    # Although it will be assigned the appropriate value once the integration begins, we need to initialize this parameter as well
+    r_previous = r0 + 0.1
+    pr_previous = pr0 + 0.1
+    
+    # Initialize parameter checking the position of the ray with respect to the grid, (x,y,z)∊[-maxlim,maxlim]
+    check_boundary = 0 
+    
+    # Initialize flag for radiative transfer
+    rad_transfer = 0
+    
+    # Create the list of values to be returned
+    ret = []
+    
+    # Create the list of values for the system's solution
+    sol = []
+    warnings.filterwarnings("ignore", category=UserWarning)
+    
+    # Check you have not exceeded integration time (you are not supposed to!)
+    while solver.t < tstop:
+        
+        print('1st Integration, t_obs=',t_obs,', x0_ray=',x0_ray,"and y0_ray=",y0_ray, flush=True)
+        
+        # Change the checking parameter if the ray has reached the interior of the grid, (x,y,z)∊[-maxlim,maxlim]
+        if check_boundary == 0:
+            if abs(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) < maxlim and abs(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) < maxlim and abs(z_cart(float(solver.y[0]), float(solver.y[1]))) < maxz:
+                check_boundary = 1
+        # If the ray is moving on the interior of the grid, (x,y,z)∊[-maxlim,maxlim]
+        else:
+            
+            # Photons tend to get trapped extremely close to the Event Horizon, circling the Black Hole
+            # When this happens, a high tolerance level in the integration scheme, rtol, does not let the orbit evolve in time, thus returning the same value for the orbital parameters (r, θ, φ, pr, pθ)
+            # Decreasing the tolerance level enough, rtol, solves this problem, and the photons fall into the Black Hole
+            # In order to keep the tolerance of our integration scheme at an acceptable level, we decide to cut off these (ultimately infalling) photons
+            # Thus, if the orbital parameters remain fixed for a certain number of integrations, int_tol, we terminate the integration and consider the orbits plunging (therefore terminating at the Event Horizon)
+            if solver.y[0] == r_previous:
+                if trapped < int_tol:
+                    trapped += 1  
+                else:
+                    fallen = 1
+                    #print('Trapped photon, 0th Integration, r=', solver.y[0])
+                    break 
+            
+            # Check if the ray has fallen inside the Black Hole, r<reh
+            if solver.y[0] < reh + 1e-8:
+                #print('Fallen, 0zth Integration')
+                break
+
+            # Or hit the hotspot, (x-x0)^2 + (y-y0)^2 + (z-z0)^2 <= R_blob^2 + (a*sinθ)^2
+            #if pow(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - x0_blob,2) + pow(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - y0_blob,2) + pow(z_cart(float(solver.y[0]), float(solver.y[1])) - z0_blob,2) <= pow(Radius_blob,2) + pow(a*mp.sin(float(solver.y[1])),2):
+                    #break
+                    
+            # Or reached the radiative sphere of the plasmoid, r<=r_rad 
+            if pow(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - x0_blob,2) + pow(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - y0_blob,2) + pow(z_cart(float(solver.y[0]), float(solver.y[1])) - z0_blob,2) <= pow(r_rad,2):
+                # Proceed to the radiative transfer algorithm
+                rad_transfer = 1.
+                #print('Radiative Transfer')
+                break
+            
+            # Or escaped its vicinity, (x,y,z)∉[-maxlim,maxlim]
+            if abs(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) > maxlim or abs(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) > maxlim or abs(z_cart(float(solver.y[0]), float(solver.y[1]))) > maxz:    
+                #print('Left vicinity of Black Hole, 0th Integration')
+                break
+            
+        # Keep track of the photon's radial distance, r, from the Black Hole (check for photons trapped near the Event Horizon)
+        r_previous = solver.y[0]
+        pr_previous = solver.y[3]
+            
+        # Otherwise continue the integration
+        solver.integrate(tstop, step=True)
+        sol.append([solver.t, solver.y[0], solver.y[1], solver.y[2], solver.y[3], solver.y[4], solver.y[5]])
+        
+    warnings.resetwarnings()
+    sol = np.array(sol)
+    
+    # Print error message if needed
+    if error!=0:
+        print("Carter's constant changed within this run!")
+    
+    # Assign new arrays for the parameter values (t,r,θ,φ,pr,pθ)
+    t_integration = sol[:,0]   
+    r_values = sol[:,1]
+    theta_values = sol[:,2]
+    phi_values = sol[:,3]
+    pr_values = sol[:,4]
+    ptheta_values = sol[:,5]
+    t_values = sol[:,6] 
+    
+    if trapped == int_tol:
+        
+        # If the photon is trapped far from the Event Horizon, change the integration scheme
+        if trapped == int_tol and r_values[-1] > reh + 1.:
+            
+            # Initialize the error parameter
+            error = 0
+            
+            # Define the system of equations for the ray's trajectory
+            def system(t, y):
+                r, theta, phi, p_r, p_theta, time= y
+                # Keep track of Carter's constant during integration
+                Q.append(Q_Carter(r, theta, p_theta, E, Lz))
+                # Report an error if the value changes
+                if abs(Q0-Q_Carter(r, theta, p_theta, E, Lz))>1e-30:
+                    error = 1
+                dydt = [r_dot(r, theta, p_r, p_theta, E, Lz), theta_dot(r, theta, p_r, p_theta, E, Lz), phi_dot(r, theta, p_r, p_theta, E, Lz), pr_dot(r, theta, p_r, p_theta, E, Lz), ptheta_dot(r, theta, p_r, p_theta, E, Lz), t_dot(r, theta, p_r, p_theta, E, Lz)]  
+                return dydt
+            
+            # Define initial and maximum integration time
+            t0 = 0.
+            tstop = 1000000*M
+            
+            # Define the ray's initial conditions
+            y0 = [r0, theta0, phi0, pr0, ptheta0, t0]
+            
+            # Choose the integration scheme
+            backend = 'dopri5'
+            #backend = 'dop853'
+            
+            # Initialize the ode solver
+            solver = ode(system).set_integrator(backend, nsteps=1., rtol=1e-100)
+            solver.set_initial_value(y0, t0)
+            
+            # Suppress Fortran-printed warning
+            solver._integrator.iwork[2] = -1
+            
+            # Initialize parameters checking for photons trapped extremely close to the Event Horizon
+            # Parameter 'trapped' counts the number of times the orbital parameters remain unchanged during the integration
+            # If the number exceeds the Integration Tolerance 'int_tol', the orbit is considered plunging
+            trapped = 0
+            int_tol = 20
+            # Parameter 'r_previous' keeps track of the photon's radial distance, r, from the Black Hole
+            # Although it will be assigned the appropriate value once the integration begins, we need to initialize this parameter as well
+            r_previous = r0 + 0.1
+            pr_previous = pr0 + 0.1
+            
+            # Initialize parameter checking the position of the ray with respect to the grid, (x,y,z)∊[-max,max]
+            check_boundary = 0 
+            
+            # Initialize flag for radiative transfer
+            rad_transfer = 0
+            
+            # Create the list of values to be returned
+            ret = []
+            
+            # Create the list of values for the system's solution
+            sol = []
+            warnings.filterwarnings("ignore", category=UserWarning)
+            
+            # Check you have not exceeded integration time (you are not supposed to!)
+            while solver.t < tstop:
+                
+                # Change the checking parameter if the ray has reached the interior of the grid, (x,y,z)∊[-max,max]
+                if check_boundary == 0:
+                    if abs(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) < maxlim and abs(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) < maxlim and abs(z_cart(float(solver.y[0]), float(solver.y[1]))) < maxz:
+                        check_boundary = 1
+                        print('Entered vicinity of black hole, 0th Integration')
+                        #print(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])), y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])), z_cart(float(solver.y[0]), float(solver.y[1])))
+                # If the ray is moving on the interior of the grid, (x,y,z)∊[-max,max]
+                else:
+                    
+                    # Photons tend to get trapped extremely close to the Event Horizon, circling the Black Hole
+                    # When this happens, a high tolerance level in the integration scheme, rtol, does not let the orbit evolve in time, thus returning the same value for the orbital parameters (r, θ, φ, pr, pθ)
+                    # Decreasing the tolerance level enough, rtol, solves this problem, and the photons fall into the Black Hole
+                    # In order to keep the tolerance of our integration scheme at an acceptable level, we decide to cut off these (ultimately infalling) photons
+                    # Thus, if the orbital parameters remain fixed for a certain number of integrations, int_tol, we terminate the integration and consider the orbits plunging (therefore terminating at the Event Horizon)
+                    if solver.y[0] == r_previous:
+                        if trapped < int_tol:
+                            trapped += 1  
+                        else:
+                            fallen = 1
+                            print('Trapped photon, 0th Integration, r=', solver.y[0])
+                            break 
+                    
+                    # Check if the ray has fallen inside the Black Hole, r<reh
+                    if solver.y[0] < reh + 1e-8:
+                        print('Fallen, 0zth Integration')
+                        break
+                    
+                    # Or hit the hotspot, (x-x0)^2 + (y-y0)^2 + (z-z0)^2 <= R_blob^2 + (a*sinθ)^2
+                    #if pow(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - x0_blob,2) + pow(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - y0_blob,2) + pow(z_cart(float(solver.y[0]), float(solver.y[1])) - z0_blob,2) <= pow(Radius_blob,2) + pow(a*mp.sin(float(solver.y[1])),2):
+                            #break
+                            
+                    # Or reached the radiative sphere of the plasmoid, r<=r_rad 
+                    if pow(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - x0_blob,2) + pow(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - y0_blob,2) + pow(z_cart(float(solver.y[0]), float(solver.y[1])) - z0_blob,2) <= pow(r_rad,2):
+                        # Proceed to the radiative transfer algorithm
+                        rad_transfer = 1.
+                        print('Radiative Transfer')
+                        print(solver.y[0])
+                        break
+                    
+                    # Or escaped its vicinity, (x,y,z)∉[-max,max]
+                    if abs(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) > maxlim or abs(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) > maxlim or abs(z_cart(float(solver.y[0]), float(solver.y[1]))) > maxz:    
+                        print('Left vicinity of Black Hole, 0th Integration')
+                        break
+                
+                # Keep track of the photon's radial distance, r, from the Black Hole (check for photons trapped near the Event Horizon)
+                r_previous = solver.y[0]
+                pr_previous = solver.y[3]
+            
+                # Otherwise continue the integration
+                solver.integrate(tstop, step=True)
+                sol.append([solver.t, solver.y[0], solver.y[1], solver.y[2], solver.y[3], solver.y[4], solver.y[5], Q_Carter(solver.y[0],solver.y[1],solver.y[4], E, Lz)])
+                
+            warnings.resetwarnings()
+            sol = np.array(sol)
+            
+            # Print error message if needed
+            if error!=0:
+                print("Carter's constant changed within this run!")
+            
+            # Assign new arrays for the parameter values (t,r,θ,φ,pr,pθ)
+            t_integration = sol[:,0]   
+            r_values = sol[:,1]
+            theta_values = sol[:,2]
+            phi_values = sol[:,3]
+            pr_values = sol[:,4]
+            ptheta_values = sol[:,5]
+            t_values = sol[:,6] 
+    
+    
+    # Radiative transfer for the vicinity of the plasmoid
+    
+    if rad_transfer == 1:
+        
+        #print(x0_ray, y0_ray)
+        
+        # Integrate the geodesic until you reach the vicinity of the plasmoid, r <= 5r_g
+        
+        # Initial conditions of the third to last step (to ensure that we are out of the plasmoid's radiative sphere)
+        y0 = [r_values[-3], theta_values[-3], phi_values[-3], pr_values[-3], ptheta_values[-3], t_values[-3]]
+        
+        # Initialize the ode solver
+        solver = ode(system).set_integrator(backend, nsteps=1., rtol=1e-100, max_step = 0.2)
+        #rtol=1e-20
+        solver.set_initial_value(y0, t0)
+        
+        # Suppress Fortran-printed warning
+        solver._integrator.iwork[2] = -1
+        
+        # Initialize the flag for infalling rays
+        fallen = 0
+        
+        # Initialize parameters checking for photons trapped extremely close to the Event Horizon
+        # Parameter 'trapped' counts the number of times the orbital parameters remain unchanged during the integration
+        # If the number exceeds the Integration Tolerance 'int_tol', the orbit is considered plunging
+        trapped = 0
+        int_tol = 20
+        # Parameter 'r_previous' keeps track of the photon's radial distance, r, from the Black Hole
+        # Although it will be assigned the appropriate value once the integration begins, we need to initialize this parameter as well
+        r_previous = r_values[-3] + 0.1
+        
+        # Initialize parameter checking the position of the ray with respect to the plasmoid
+        check_plasmoid = 0 
+        
+        sol_new = []
+        warnings.filterwarnings("ignore", category=UserWarning)
+        
+        # Check you have not exceeded integration time (you are not supposed to!)
+        while solver.t < tstop:
+            
+            print('2nd Integration, t_obs=',t_obs,', x0_ray=',x0_ray,"and y0_ray=",y0_ray,",r=",solver.y[0], flush=True)
+            
+            # If you have not reached the vicinity of the plasmoid
+            if check_plasmoid == 0:
+            
+                # * Why is this here?: Because sometimes photons falsely trigger the radiative transfer scheme, by scraping through the plasmoid's radiative sphere*
+                # Photons tend to get trapped extremely close to the Event Horizon, circling the Black Hole
+                # When this happens, a high tolerance level in the integration scheme, rtol, does not let the orbit evolve in time, thus returning the same value for the orbital parameters (r, θ, φ, pr, pθ)
+                # Decreasing the tolerance level enough, rtol, solves this problem, and the photons fall into the Black Hole
+                # In order to keep the tolerance of our integration scheme at an acceptable level, we decide to cut off these (ultimately infalling) photons
+                # Thus, if the orbital parameters remain fixed for a certain number of integrations, int_tol, we terminate the integration and consider the orbits plunging (therefore terminating at the Event Horizon)
+                if solver.y[0] == r_previous:
+                    if trapped < int_tol:
+                        trapped += 1  
+                    else:
+                        fallen = 1
+                        #print('Trapped photon, 1st Integration, r=', solver.y[0])
+                        break
+                
+                # Check if the ray has fallen inside the Black Hole, r<reh
+                if solver.y[0] < reh + 1e-8:
+                    fallen = 1
+                    #print('Fallen, 1st Integration')
+                    break
+                
+                # Change the checking parameter if the ray has reached the interior of the plasmoid, (x-x0)^2 + (y-y0)^2 + (z-z0)^2 <= R_blob^2 + (a*sinθ)^2
+                #if pow(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - x0_blob,2) + pow(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - y0_blob,2) + pow(z_cart(float(solver.y[0]), float(solver.y[1])) - z0_blob,2) <= pow(Radius_blob,2) + pow(a*mp.sin(float(solver.y[1])),2):
+                
+                # Change the checking parameter if the ray has reached the vicinity of the plasmoid, r <= r_rad  
+                if pow(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - x0_blob,2) + pow(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - y0_blob,2) + pow(z_cart(float(solver.y[0]), float(solver.y[1])) - z0_blob,2) <= pow(r_rad,2):    
+                    check_plasmoid = 1  
+                    #print("Entered vicinity of plasmoid")
+                    break
+                
+                # * Why is this here?: Because sometimes photons scrape by the plasmoid's radiative sphere
+                # Check if the ray has escaped the vicinity of the Black Hole, (x,y,z)∉[-maxlim,maxlim]
+                if check_boundary == 1 and abs(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) > maxlim or abs(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) > maxlim or abs(z_cart(float(solver.y[0]), float(solver.y[1]))) > maxz:    
+                    #print('Left vicinity of Black Hole')
+                    check_boundary = 0
+                    break
+                    
+            # Keep track of the photon's radial distance, r, from the Black Hole (check for photons trapped near the Event Horizon)
+            r_previous = solver.y[0]
+                
+            # Otherwise continue the integration
+            solver.integrate(tstop, step=True)
+            sol_new.append([solver.t, solver.y[0], solver.y[1], solver.y[2], solver.y[3], solver.y[4], solver.y[5]])
+              
+        warnings.resetwarnings()
+        #print('Finished 1st Integration')
+
+        # If you reach the vicinity of the plasmoid, continue on to the next integration scheme
+        if check_plasmoid != 0:
+            
+            sol_new = np.array(sol_new)
+    
+            # Assign new arrays for the parameter values (t,r,θ,φ,pr,pθ)
+            if len(sol_new) == 1:
+                t_integration_new = t_integration[-2] + sol_new[-1,0]  
+            else:
+                t_integration_new = t_integration[-2] + sol_new[:-1,0]    
+            r_new = sol_new[:,1]
+            theta_new = sol_new[:,2]
+            phi_new = sol_new[:,3]
+            pr_new = sol_new[:,4]
+            ptheta_new = sol_new[:,5]
+            t_new = sol_new[:,6] 
+        
+            # When you reach the vicinity of the plasmoid, continue to the integration scheme
+        
+            # Define the system of equations for the radiative transfer calculation
+            def system(t, y):
+                r, theta, phi, p_r, p_theta, time, tauv, Iv= y
+                # Keep track of Carter's constant during integration
+                Q.append(Q_Carter(r, theta, p_theta, E, Lz))
+                # Report an error if the value changes
+                if abs(Q0-Q_Carter(r, theta, p_theta, E, Lz))>1e-10:
+                    error = 1
+                dydt = [r_dot(r, theta, p_r, p_theta, E, Lz), theta_dot(r, theta, p_r, p_theta, E, Lz), phi_dot(r, theta, p_r, p_theta, E, Lz), pr_dot(r, theta, p_r, p_theta, E, Lz), ptheta_dot(r, theta, p_r, p_theta, E, Lz), t_dot(r, theta, p_r, p_theta, E, Lz), tauv_dot(r, theta, phi, p_r, p_theta, E, Lz, ut_4, ur_4, utheta_4, uphi_4), Iv_dot(r, theta, phi, p_r, p_theta, E, Lz, tauv, ut_4, ur_4, utheta_4, uphi_4)]  
+                return dydt
+            
+            # Define initial and maximum integration time
+            t0 = 0.
+            tstop = pow(10,10)
+            
+            # Initial conditions for radiative transfer
+            Iv0 = 0.
+            tauv0 = 0.
+            
+            # Initial conditions of last step
+            y0 = [r_new[-1], theta_new[-1], phi_new[-1], pr_new[-1], ptheta_new[-1], t_new[-1], tauv0, Iv0]
+            
+            # Choose the integration scheme
+            #backend = 'dopri5'
+            #backend = 'dop853'
+            
+            # Initialize the ode solver
+            solver = ode(system).set_integrator(backend, nsteps=1., rtol=1e-100, max_step = 0.1)
+            #rtol=1e-20
+            solver.set_initial_value(y0, t0)
+            
+            # Suppress Fortran-printed warning
+            solver._integrator.iwork[2] = -1
+            
+            # Initialize paramters checking for Negative Roots or Infinity
+            root_error = []
+            root_error_flag = 0
+            
+            # Initialize parameters checking for photons trapped extremely close to the Event Horizon
+            # Parameter 'trapped' counts the number of times the orbital parameters remain unchanged during the integration
+            # If the number exceeds the Integration Tolerance 'int_tol', the orbit is considered plunging
+            trapped = 0
+            int_tol = 20
+            # Parameter 'r_previous' keeps track of the photon's radial distance, r, from the Black Hole
+            # Although it will be assigned the appropriate value once the integration begins, we need to initialize this parameter as well
+            r_previous = r_new[-1] + 0.1
+            
+            # Keep track of the rest of the photon's orbital parameters
+            # Although they will be assigned the appropriate values once the integration begins, we need to initialize these parameters
+            t_previous = r_new[-1]
+            theta_previous = r_new[-1]
+            phi_previous = r_new[-1]
+            pr_previous = r_new[-1]
+            ptheta_previous = r_new[-1]
+            tauv_previous = r_new[-1]
+            Iv_previous = r_new[-1]
+            
+            # Initialize parameter to check if the ray has reached the interior of the plasmoid
+            in_plasmoid = 0
+            
+            # Create the list for the values of the orbit when the ray reaches the plasmoid
+            reach_plasm = []
+            
+            # Create the list for the values of the orbit when the ray leaves the plasmoid
+            left_plasm = []
+            
+            # Initialize parameter saving the results
+            save_pixel = 0
+            
+            # Create the list for the system's solution
+            sol_newnew = []
+            warnings.filterwarnings("ignore", category=UserWarning)
+            
+            # Check you have not exceeded integration time (you are not supposed to!)
+            while solver.t < tstop:
+                
+                print('3rd Integration, t_obs=',t_obs,', x0_ray=',x0_ray,"and y0_ray=",y0_ray, flush=True)
+
+                
+                # If you encounter any root errors within the radiative transfer functions (gamma_e(r, theta)) during the integration,
+                # Save the previous values for the photon orbit
+                if len(root_error) > 0 and root_error_flag == 0:
+                    root_error_flag = 1
+                    g = g_redshift(solver.y[0], solver.y[1], ut_4, ur_4, utheta_4, uphi_4, E, Lz, solver.y[3], solver.y[4], root_error)
+                    left_plasm.append([t_previous, r_previous, theta_previous, phi_previous, pr_previous, ptheta_previous, tauv_previous, Iv_previous, g])
+                    #print('Cannot integrate further, 2nd Integration')
+                    save_pixel = 1
+                    break
+    
+                # Photons tend to get trapped extremely close to the Event Horizon, circling the Black Hole
+                # When this happens, a high tolerance level in the integration scheme, rtol, does not let the orbit evolve in time, thus returning the same value for the orbital parameters (r, θ, φ, pr, pθ)
+                # Decreasing the tolerance level enough, rtol, solves this problem, and the photons fall into the Black Hole
+                # In order to keep the tolerance of our integration scheme at an acceptable level, we decide to cut off these (ultimately infalling) photons
+                # Thus, if the orbital parameters remain fixed for a certain number of integrations, int_tol, we terminate the integration and consider the orbits plunging (therefore terminating at the Event Horizon)
+                if solver.y[0] == r_previous:
+                    if trapped < int_tol:
+                        trapped += 1  
+                    else:
+                        fallen = 1
+                        #print('Trapped photon, 2nd Integration, r=', solver.y[0])
+                        break            
+    
+                # Check if the ray has fallen inside the Black Hole, r<reh
+                if solver.y[0] < reh + 1e-8:
+                    fallen = 1
+                    #print('Fallen, 2nd Integration')
+                    break
+                
+                # If the material becomes optically thick, τ > 1.
+                #if solver.y[6] > 1.:
+                    #print('Optically thick material')
+                    # Save the previous step (where the material was NOT optically thick)
+                    #g = g_redshift(r_previous, theta_previous, ut_4, ur_4, utheta_4, uphi_4, E, Lz, pr_previous, ptheta_previous)
+                    #left_plasm.append([t_previous, r_previous, theta_previous, phi_previous, pr_previous, ptheta_previous, tauv_previous, Iv_previous, g])    
+                    #save_pixel = 1
+                    #break   
+                
+                # If the ray is moving on the vicinity of the plasmoid, r <= r_rad
+                # Save the pixel values if the ray crosses the interior of the plasmoid, (x-x0)^2 + (y-y0)^2 + (z-z0)^2 <= R_blob^2 [+ (a*sinθ)^2 + pow(a*mp.sin(float(solver.y[1])),2)]
+                if in_plasmoid == 0 and pow(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - x0_blob,2) + pow(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - y0_blob,2) + pow(z_cart(float(solver.y[0]), float(solver.y[1])) - z0_blob,2) <= pow(Radius_blob,2):
+                    #print('Hit plasmoid')
+                    in_plasmoid = 1
+                    # Save the data
+                    #g = g_redshift(solver.y[0], solver.y[1], ut_4, ur_4, utheta_4, uphi_4, E, Lz, solver.y[3], solver.y[4])
+                    #left_plasm.append([solver.y[5], solver.y[0], solver.y[1], solver.y[2], solver.y[3], solver.y[4], solver.y[6], solver.y[7], g])
+                    #save_pixel = 1
+                    #break
+                    
+                # Check if the ray has left the vicinity of the plasmoid, r >= r_rad
+                if check_plasmoid == 1 and pow(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - x0_blob,2) + pow(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - y0_blob,2) + pow(z_cart(float(solver.y[0]), float(solver.y[1])) - z0_blob,2) >= pow(r_rad,2):
+                    #print('Left vicinity of plasmoid')
+                    check_plasmoid = 0
+                    # Save the data
+                    g = g_redshift(solver.y[0], solver.y[1], ut_4, ur_4, utheta_4, uphi_4, E, Lz, solver.y[3], solver.y[4])
+                    left_plasm.append([solver.y[5], solver.y[0], solver.y[1], solver.y[2], solver.y[3], solver.y[4], solver.y[6], solver.y[7], g])    
+                    save_pixel = 1
+                    break    
+                    
+                # Check if the ray has left the interior of the plasmoid, (x-x0)^2 + (y-y0)^2 + (z-z0)^2 > R_blob^2 + (a*sinθ)^2
+                #if pow(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - x0_blob,2) + pow(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2])) - y0_blob,2) + pow(z_cart(float(solver.y[0]), float(solver.y[1])) - z0_blob,2) > pow(Radius_blob,2) + pow(a*mp.sin(float(solver.y[1])),2):
+                #        break
+            
+                # Check if the ray has escaped the vicinity of the Black Hole, (x,y,z)∉[-maxlim,maxlim]
+                if check_boundary == 1 and abs(x_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) > maxlim or abs(y_cart(float(solver.y[0]), float(solver.y[1]), float(solver.y[2]))) > maxlim or abs(z_cart(float(solver.y[0]), float(solver.y[1]))) > maxz:    
+                    #print('Left vicinity of Black Hole')
+                    check_boundary = 0
+                    break
+                
+                # Keep track of the photon's radial distance, r, from the Black Hole (check for photons trapped near the Event Horizon)
+                r_previous = solver.y[0]
+                # As well as the rest of the orbital parameters
+                t_previous = solver.y[5]
+                theta_previous = solver.y[1]
+                phi_previous = solver.y[2]
+                pr_previous = solver.y[3]
+                ptheta_previous = solver.y[4]
+                tauv_previous = solver.y[6]
+                Iv_previous = solver.y[7]
+                
+                # Otherwise continue the integration
+                solver.integrate(tstop, step=True)
+                sol_newnew.append([solver.t, solver.y[0], solver.y[1], solver.y[2], solver.y[3], solver.y[4], solver.y[5], solver.y[6], solver.y[7]])
+                
+            warnings.resetwarnings()
+            sol_newnew = np.array(sol_newnew)
+    
+            # Assign new arrays for the parameter values (t,r,θ,φ,pr,pθ)
+            if len(sol_new) == 1:
+                t_integration_newnew = t_integration_new + sol_newnew[:-1,0]  
+            else:
+                t_integration_newnew = t_integration_new[-1] + sol_newnew[:-1,0]    
+            r_newnew = sol_newnew[:-1,1]
+            theta_newnew = sol_newnew[:-1,2]
+            phi_newnew = sol_newnew[:-1,3]
+            pr_newnew = sol_newnew[:-1,4]
+            ptheta_newnew = sol_newnew[:-1,5]
+            t_newnew = sol_newnew[:-1,6]
+            tauv_values = sol_newnew[:-1,7]
+            Iv_values = sol_newnew[:-1,8]   
+            #print(Iv_values[-1])
+            #print(in_plasmoid)
+            
+            # Calculate the final integration time
+            if len(sol_new) == 1:
+                t_integration_final = np.append(t_integration[:-1], t_integration_new)
+                t_integration_final = np.append(t_integration, t_integration_newnew)
+            else:
+                t_integration_final = np.concatenate((t_integration[:-1], t_integration_new, t_integration_newnew))
+            
+            # Calculate the final values of (t,r,θ,φ,pr,pθ)
+            t_values = np.concatenate((t_values[:-1], t_new, t_newnew))
+            r_values = np.concatenate((r_values[:-1], r_new, r_newnew))
+            theta_values = np.concatenate((theta_values[:-1], theta_new, theta_newnew))
+            phi_values = np.concatenate((phi_values[:-1], phi_new, phi_newnew))
+            pr_values = np.concatenate((pr_values[:-1], pr_new, pr_newnew))
+            ptheta_values = np.concatenate((ptheta_values[:-1], ptheta_new, ptheta_newnew))
+            
+            # Save the data
+            if save_pixel == 1:
+        
+                # Save the initial conditions of the ray
+                ret.append([t_obs, -x0_ray, y0_ray, z0_ray])
+                
+                # Save the values for the orbit when the ray left the radiative sphere of the plasmoid, r >= r_rad
+                for item in left_plasm[0]:
+                    ret[0].append(item)
+                    
+                # Save the parameter checking if the ray has reached the interior of the plasmoid
+                ret[0].append(in_plasmoid)
+                
+                # If the ray reaches the interior of the plasmoid, save that data as well
+                """
+                if in_plasmoid == 1:
+                    for item in reach_plasm[0]:
+                        ret[0].append(item)
+                # Otherwise, save 0's
+                else:
+                    for i in range(0, 6):
+                        ret[0].append(0.)
+                """
+                print(ret)
+            
+            # Unless you have fallen inside the Black Hole
+            else:
+                
+                # No radiation is recieved from an infalling ray
+                tauv_values = []
+                Iv_values = []
+                
+        # Apparently some photons falsely trigger the Radiative Transfer integration scheme 
+        # by scraping through the poles of the plasmoid's radiative sphere, r <= 5r_g
+        # If the photon doesn't reach the vicinity of the plasmoid during the 1st Integration scheme, 
+        # Print the respective message
+        else:
+            print('Finished 1st Integration without reaching the vicinity of the plasmoid\nLeft vicinity of Black Hole')
+        
+                
+    # Print finished run
+    print('Run finished for t_obs=',t_obs,', x0_ray=',x0_ray,"and y0_ray=",y0_ray, flush=True)
+    
+    return ret
