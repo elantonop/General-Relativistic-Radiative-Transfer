@@ -1,0 +1,325 @@
+# Define csc(θ) = 1/sin(θ)
+
+def csc(theta):
+    result = 1/mp.sin(theta)
+    return result
+
+# Define cot(θ) = 1/tan(θ)
+
+def cot(theta):
+    result = 1/mp.tan(theta)
+    return result
+
+# Define the Black Hole's Ergosphere, rergo(θ,φ)
+def rergo(theta):
+    result = M + mp.sqrt(pow(M,2) - pow(a*mp.cos(theta),2))
+    return result
+
+# Define useful functions
+
+def Delta(r):
+    result = pow(r,2) - 2*M*r + pow(a,2)
+    return result
+
+def Sigma(r, theta):
+    result = pow(r,2) + pow(a*mp.cos(theta),2)
+    return result
+
+def Alpha(r, theta):
+    result = pow(pow(r,2) + pow(a,2),2) - pow(a*mp.sin(theta),2)*Delta(r)
+    return result
+
+def omega_small(r, theta):
+    result = 2*M*a*r/Alpha(r, theta)
+    return result
+
+def omega_e(r, theta):
+    # For prograde orbits
+    if a*rot > 0.:
+        result = mp.sqrt(M)/(pow(r,3/2) + a*mp.sqrt(M))
+    # For retrograde orbits
+    elif a*rot < 0.:
+        result = -mp.sqrt(M)/(pow(r,3/2) - a*mp.sqrt(M))
+    # For non-rotating Black Holes
+    else:
+        result = rot*mp.sqrt(M)/r**(3/2)
+    
+    return result
+
+def e_n(r, theta):
+    result = mp.sqrt(Sigma(r, theta)*Delta(r)/Alpha(r,theta))
+    return result
+
+def e_psi(r, theta):
+    result = mp.sin(theta)*mp.sqrt(Alpha(r,theta)/Sigma(r,theta))
+    return result
+
+def u_e(r, theta):
+    result = (omega_e(r,theta) - omega_small(r,theta))*e_psi(r,theta)/e_n(r,theta)
+    return result
+
+def kappa(theta, p_theta, E, Lz):
+	# Avoid problems near the axis
+    if mp.sin(theta) < pow(10,-8):
+        sintheta = pow(10,-8)
+        result = pow(p_theta,2) + pow(Lz/sintheta,2) + pow(a,2)*(pow(E*mp.sin(theta),2) + m)
+    else:
+        result = pow(p_theta,2) + pow(Lz*csc(theta),2) + pow(a,2)*(pow(E*mp.sin(theta),2) + m)
+    return result
+
+# Define Carter's constant
+
+def Q_Carter(r, theta, p_theta, E, Lz):
+	# Avoid problems near the axis
+    if mp.sin(theta) < pow(10,-8):
+        sintheta = pow(10,-8)
+        result = pow(p_theta,2) + (pow(Lz/sintheta,2) - pow(a,2)*(pow(E,2) + pow(m,2)))*pow(mp.cos(theta),2)
+    else:
+        result = pow(p_theta,2) + (pow(Lz*csc(theta),2) - pow(a,2)*(pow(E,2) + pow(m,2)))*pow(mp.cos(theta),2)
+    return result
+
+# Define the covariant components of the metric tensor, g_μν
+
+def gtt_down(r, theta):
+    result = -(Delta(r) - pow(a*mp.sin(theta),2))/Sigma(r,theta)
+    #result
+    return result
+
+def gtphi_down(r, theta):
+    result = -(2*a*M*r*(np.sin(theta))**2)/Sigma(r,theta)
+    return result
+
+
+def gphiphi_down(r, theta):
+    result = Alpha(r,theta)*pow(mp.sin(theta),2)/Sigma(r,theta)
+    return result
+
+def grr_down(r, theta):
+    result = Sigma(r,theta)/Delta(r)
+    return result
+
+def gthetatheta_down(r, theta):
+    result = Sigma(r,theta)
+    return result
+
+# Define the contravariant components of the metric tensor
+
+def gtt_up(r, theta):
+	# Avoid problems near the axis
+    if mp.sin(theta) < pow(10,-8):
+        sintheta = pow(10,-8)
+        result = -(pow(pow(r,2) + pow(a,2),2) - pow(a,2)*Delta(r)*pow(sintheta,2))/(Sigma(r, theta)*Delta(r))
+    else:
+        result = -Alpha(r, theta)/(Sigma(r,theta)*Delta(r))
+    return result
+
+def gtphi_up(r, theta):
+    result = -2*M*r*a/(Sigma(r,theta)*Delta(r))
+    return result
+
+def gphiphi_up(r, theta):
+	# Avoid problems near the axis
+    if mp.sin(theta) < pow(10,-8):
+        sintheta = pow(10,-8)
+        result = (Delta(r) - pow(a*sintheta,2))/(Sigma(r,theta)*Delta(r)*pow(sintheta,2))
+    else:
+        result = (Delta(r) - pow(a*mp.sin(theta),2))/(Sigma(r,theta)*Delta(r)*pow(mp.sin(theta),2))
+    return result
+
+def grr_up(r, theta):
+    result = Delta(r)/Sigma(r,theta)
+    return result
+
+def gthetatheta_up(r, theta):
+    result = 1/Sigma(r,theta)
+    return result
+
+# Define functions to be integrated
+
+def t_dot(r, theta, p_r, p_theta, E, Lz):
+    result = E + 2*M*r*((pow(r,2) + pow(a,2))*E - a*Lz)/(Sigma(r,theta)*Delta(r))
+    return result
+
+def phi_dot(r, theta, p_r, p_theta, E, Lz):
+	# Avoid problems near the axis
+    if mp.sin(theta) < pow(10,-8):
+        sintheta = pow(10,-8)
+        result = (2*a*M*r*E + (Sigma(r,theta) - 2*M*r)*Lz*pow(sintheta,-2))/(Sigma(r,theta)*Delta(r))
+    else:
+        result = (2*a*M*r*E + (Sigma(r,theta) - 2*M*r)*Lz*pow(csc(theta),2))/(Sigma(r,theta)*Delta(r))
+    return result
+
+def r_dot(r, theta, p_r, p_theta, E, Lz):
+    result = Delta(r)*p_r/Sigma(r,theta)
+    return result
+
+def theta_dot(r, theta, p_r, p_theta, E, Lz):
+    result = p_theta/Sigma(r,theta)
+    return result
+
+def pr_dot(r, theta, p_r, p_theta, E, Lz):
+    result = (((pow(r,2) + pow(a,2))*m-kappa(theta,p_theta,E,Lz))*(r-1) + r*Delta(r)*m + 2*r*(pow(r,2) + pow(a,2))*pow(E,2) - 2*a*E*Lz)/(Sigma(r,theta)*Delta(r)) - (2*pow(p_r,2)*(r-1))/Sigma(r,theta)
+    return result
+
+def ptheta_dot(r, theta, p_r, p_theta, E, Lz):
+	# Avoid problems near the axis
+    if mp.sin(theta) < pow(10,-8):
+        sintheta = pow(10,-8)
+        result = mp.sin(theta)*mp.cos(theta)*(pow(Lz,2)/pow(sintheta,4) - pow(a,2)*(pow(E,2) + m))/Sigma(r,theta)
+    else:
+        result = mp.sin(theta)*mp.cos(theta)*(pow(Lz,2)/pow(mp.sin(theta),4) - pow(a,2)*(pow(E,2) + m))/Sigma(r,theta)
+    return result
+
+# Coordinate transformation from Boyer-Lindquist to Cartesian
+
+def x_cart(r, theta, phi):
+    result = mp.sqrt(pow(r,2) + pow(a,2))*mp.sin(theta)*mp.cos(phi)
+    return result
+
+def y_cart(r, theta, phi):
+    result = mp.sqrt(pow(r,2) + pow(a,2))*mp.sin(theta)*mp.sin(phi)
+    return result
+
+def z_cart(r, theta):
+    result = r*mp.cos(theta)
+    return result
+
+# Transformation to the Black Hole's coordinate system
+
+def D_coord(y0_ray):
+    result = (mp.sqrt(pow(r0_obs,2) + pow(a,2)) - z0_ray)*mp.sin(theta0_obs) - y0_ray*mp.cos(theta0_obs)
+    return result
+
+def x_BH(x0_ray, y0_ray):
+    result = D_coord(y0_ray)*mp.cos(phi0_obs) - x0_ray*mp.sin(phi0_obs)
+    return result
+
+def y_BH(x0_ray, y0_ray):
+    result = D_coord(y0_ray)*mp.sin(phi0_obs) + x0_ray*mp.cos(phi0_obs)
+    return result
+
+def z_BH(x0_ray, y0_ray):
+    result = (r0_obs - z0_ray)*mp.cos(theta0_obs) + y0_ray*mp.sin(theta0_obs)
+    return result
+
+# Define the photon's initial position in the Black Hole's coordinate system
+
+def s_coord(x0_BH, y0_BH, z0_BH):
+    result = pow(x0_BH,2) + pow(y0_BH,2) + pow(z0_BH,2) - pow(a,2)
+    return result
+
+def r_init(x0_BH, y0_BH, z0_BH):
+    result = mp.sqrt((s_coord(x0_BH, y0_BH, z0_BH) + mp.sqrt(pow(s_coord(x0_BH, y0_BH, z0_BH),2) + pow(2*a*z0_BH,2)))/2)
+    return result
+
+def theta_init(r0, z0_BH):
+    result = mp.acos(z0_BH/r0)
+    return result
+
+def phi_init(x0_BH, y0_BH, z0_BH):
+    result = mp.atan2(y0_BH,x0_BH)
+    return result
+
+# Define the photon's initial velocity
+
+def R_coord(r0):
+    result = mp.sqrt(pow(r0,2) + pow(a,2))
+    return result
+
+def Phi_coord(phi0):
+    result = phi0 - phi0_obs
+    return result
+
+def rdot_init(r0, theta0, phi0):
+    result = -(r0*R_coord(r0)*mp.sin(theta0)*mp.sin(theta0_obs)*mp.cos(Phi_coord(phi0)) + pow(R_coord(r0),2)*mp.cos(theta0)*mp.cos(theta0_obs))/Sigma(r0,theta0);
+    return result
+
+def thetadot_init(r0, theta0, phi0):
+    result = (r0*mp.sin(theta0)*mp.cos(theta0_obs) - R_coord(r0)*mp.cos(theta0)*mp.sin(theta0_obs)*mp.cos(Phi_coord(phi0)))/Sigma(r0,theta0)
+    return result
+
+def phidot_init(r0, theta0, phi0):
+	# Avoid problems near the axis
+    if mp.sin(theta0) < pow(10,-8):
+        sintheta = pow(10,-8)
+        result = mp.sin(theta0_obs)*mp.sin(Phi_coord(phi0))/(R_coord(r0)*sintheta)
+    else:
+        result = mp.sin(theta0_obs)*mp.sin(Phi_coord(phi0))/(R_coord(r0)*mp.sin(theta0))
+    return result
+
+# Define the photon's initial conditions
+
+def E_init(r0, theta0, phi0, rdot0, thetadot0, phidot0):
+    result = mp.sqrt((Sigma(r0,theta0) - 2*M*r0)*(Sigma(r0,theta0)*pow(rdot0,2) + Sigma(r0,theta0)*Delta(r0)*pow(thetadot0,2) - Delta(r0)*m)/(Sigma(r0,theta0)*Delta(r0)) + Delta(r0)*pow(mp.sin(theta0)*phidot0,2))
+    return result
+
+def Lz_init(r0, theta0, phi0, phidot0, E):
+    result = (Sigma(r0,theta0)*Delta(r0)*phidot0 - 2*a*M*r0*E)*pow(mp.sin(theta0),2)/(Sigma(r0,theta0) - 2*M*r0)
+    return result
+
+def tdot_init(r0, theta0, phi0, E, Lz):
+    result = (1 + 2*M*r0*(pow(r0,2) + pow(a,2))/(Sigma(r0,theta0)*Delta(r0)))*E - 2*a*M*r0*Lz/(Sigma(r0,theta0)*Delta(r0))
+    return result
+
+# Define the Innermost Stable Circular Orbit
+
+def r_ISCO():
+    x = a/M
+    # Prograde orbit, rot = 1
+    if rot == 1:
+        result = M*(3 + Z2(x) - mp.sqrt((3 - Z1(x))*(3 + Z1(x) + 2*Z2(x))))
+    # Retrograde orbit, rot = -1
+    else:
+        result = M*(3 + Z2(x) + mp.sqrt((3 - Z1(x))*(3 + Z1(x) + 2*Z2(x))))
+    return result
+
+def Z1(x):
+    result = 1 + pow(1 - pow(x,2), 1/3)*(pow(1 + x, 1/3) + pow(1 - x, 1/3))
+    return result
+
+def Z2(x):
+    result = mp.sqrt(3*pow(x,2) + pow(Z1(x),2))
+    return result   
+
+# Define the gravitational redshift, γ = Εobs/Εem = v/v0 = p_μ(xobs)u^μ(xobs)/p_μ(xem)u^μ(xem)
+
+def g_redshift(r, theta, u_t, u_r, u_theta, u_phi, E, Lz, p_r, p_theta):
+    result = -E/(-E*u_t + Lz*u_phi + grr_up(r,theta)*p_r*u_r + gthetatheta_up(r,theta)*p_theta*u_theta)
+    return result
+
+# Define the radiative properties of the medium
+
+def jv(r, theta, phi, p_r, p_theta, E, Lz, u_t, u_r, u_theta, u_phi):
+
+    # Thermal Synchrotron, Pandya 2016 eq.(29)&(31)
+    A = n_e*pow(ch_e,2)*v_c/c_light
+    v0 = v_obs/g_redshift(r, theta, u_t, u_r, u_theta, u_phi, E, Lz, p_r, p_theta)
+    # Calculate the ratio X = v_obs/v_s
+    X_e = v_obs/v_s 
+    result = A*mp.sqrt(2)*mp.pi*mp.sin(theta0_obs)*pow(pow(X_e,1/2) + pow(2,11/12)*pow(X_e,1/6),2)*mp.exp(-pow(X_e,1/3))/27
+    
+    # Power-law Distribution, Pandya 2016 eq.(29)&(33)
+    """
+    A = n_e*pow(ch_e,2)*v_c/c_light
+    result = A*pow(3,p/2)*(p - 1)*mp.sin(theta0_obs)*scp.gamma((3*p - 1)/12)*scp.gamma((3*p + 19)/12)*pow(v_obs/(v_c*mp.sin(theta0_obs)),-(p - 1)/2)/(2*(p + 1)*(pow(glor_min, 1 - p) - pow(glor_max, 1 - p)))
+    """
+
+    return result
+
+def av(r, theta, phi):
+    
+    # Optically thin material
+    result = 0.
+    
+    return result
+
+def tauv_dot(r, theta, phi, p_r, p_theta, E, Lz, u_t, u_r, u_theta, u_phi):
+    result = av(r, theta, phi)/g_redshift(r, theta, u_t, u_r, u_theta, u_phi, E, Lz, p_r, p_theta)
+    return result
+
+def Iv_dot(r, theta, phi, p_r, p_theta, E, Lz, tau_v, u_t, u_r, u_theta, u_phi):
+    tau_v_const = 0.
+    v0 = v_obs/g_redshift(r, theta, u_t, u_r, u_theta, u_phi, E, Lz, p_r, p_theta)
+    j = jv(r, theta, phi, p_r, p_theta, E, Lz, u_t, u_r, u_theta, u_phi)/pow(v0,3)
+    result = j*mp.exp(-tau_v_const)/g_redshift(r, theta, u_t, u_r, u_theta, u_phi, E, Lz, p_r, p_theta)
+    return result
