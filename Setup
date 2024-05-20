@@ -1,0 +1,280 @@
+# Define Black Hole mass, spin and photon mass
+M = 1.; a = 0.05; m = 0.; 
+
+# Define the Gravitational Radius, rg = GM/c^2
+rg = M
+
+# Choose maximum x-y-z value
+maxz = 40*rg
+maxlim = 20*rg
+
+# Calculate the Black Hole's Event Horizon
+reh = M + mp.sqrt(pow(M,2) - pow(a,2))
+print("\nreh=",reh)
+
+# Define the observer's initial position
+r0_obs = 500*rg; theta0_obs = 0.1*np.pi/180; phi0_obs = 0*np.pi/180;
+
+# Define the ray's initial position, except for x0_ray and y0_ray
+z0_ray = 0.; 
+
+# Choose maximum number of points in the grid
+Nmax = 200
+
+# Create the array of grid points
+step = 2*maxlim/Nmax
+
+x_temp = np.arange(-maxlim, maxlim+0.00001, step)
+y_temp = np.arange(-maxlim, maxlim+0.00001, step)
+
+grid = np.dstack(np.meshgrid(x_temp, y_temp)).reshape(-1,2)
+
+# Divide the grid into N smaller sub-grids
+N_sub = 100
+divided_grid = np.array_split(grid, N_sub)
+
+# Define the radius of the Ηotspot
+Radius_blob = rg/2
+
+# Define the Hotspot's radiative sphere
+r_rad = 2*Radius_blob
+
+# Define the Hotspot's magnetic field 
+B_blob = 50 
+
+# Specify the electron population inside the Hot Spot
+
+# Thermal Distribution
+
+# Define the speed of light, c
+c_light = 2.997925*pow(10,10) 
+
+# Define Planck and Boltzmann constant, h & kb
+h_pl = 6.6261*pow(10,-27) 
+kb = 1.3807*pow(10,-16) 
+
+# Define the electron mass and charge, m_e & e
+m_e = 9.1094*pow(10,-28)  
+ch_e = 4.80325*pow(10,-10)           
+
+# Define the electrons' number density and dimensionless temperature, n_e & Θ_e = k_B*T_e/m_e*c^2
+n_e = pow(10,10); Theta_e = 10;
+
+# Define the electron temperature, T_e 
+T_e = m_e*pow(c_light,2)*Theta_e/kb
+
+# Power-law Distribution
+p = 2.2 
+glor_min = 500.
+glor_max = pow(10,5)
+
+# Define the critical frequency, vc = eB/2π*m_e*c
+v_c = ch_e*B_blob/(2*mp.pi*m_e*c_light)
+
+# Define the synchrotron frequency, vs = 2*v_c*Θ_e^2*sinθ/9
+v_s = 2*v_c*pow(Theta_e,2)*mp.sin(theta0_obs)/9
+
+# Define the observing frequency, v_obs
+v_obs = 1.36*pow(10,14) 
+
+# Define the rotation of the Hotspots trajectory, rot = 1 for clockwise and -1 for counter-clockwise
+if a > 0.:
+    rot = 1.
+else:
+    rot = -1
+
+# Define the initial position of the Ηotspot in Boyer-Lindquist coordinates
+r_orbit_blob = 6*rg 
+theta_orbit_blob = mp.pi/2
+
+if phi0_obs == mp.pi/2:
+    phi_orbit_blob = 80*mp.pi/180
+elif phi0_obs == 0.:
+    phi_orbit_blob = 170*mp.pi/180 
+    
+# Define the period of the Hotspot's trajectory, Keplerian Angular Velocity ω = (GM/r^3)^1/2
+omega_orbit_blob = 1*omega_e(r_orbit_blob, theta_orbit_blob)  #
+T_orbit_blob = abs(2*mp.pi/omega_orbit_blob)
+
+# Create the timetable for the observations
+N_obs = 1 + 1
+t_step = T_orbit_blob/N_obs
+t_obs_orbit = np.arange(0, T_orbit_blob, t_step)
+
+# Create the file for the data
+f = open('HotSpot_Emission.txt','w',encoding='utf-8')
+f.write(f'{"t_obs":<18}\t{"x0_ray":<18}\t{"y0_ray":<18}\t{"z0_ray":<18}\t{"t_left_plasmoid":<18}\t{"r_left_plasmoid":<18}\t{"theta_left_plasmoid":<18}\t{"phi_left_plasmoid":<18}\t{"pr_left_plasmoid":<18}\t{"ptheta_left_plasmoid":<18}\t{"tauv_left_plasmoid":<18}\t{"Iv_left_plasmoid":<18}\t{"g_redsh":<18}\t{"in_plasmoid":<10}')
+
+# Initialize total error parameter
+total_error = 0
+
+# Run a loop for the observations
+for index_t in range(0, len(t_obs_orbit)):
+    
+    # Define the observational timestamp
+    t_obs = t_obs_orbit[index_t]
+    
+    # Choose the Hotspot trajectory, 0: Cylindrical
+    helix = 0.
+    
+    # Define the maximum height of the orbit
+    max_z = 5.
+
+    # Initialize the height
+    z0_blob = 0.
+
+    # Cylindrical orbit
+    if helix == 0.:
+        
+        # Define the ejection velocity of the Hot Spot
+        uz0_blob = max_z/(t_obs_orbit[-1] - t_obs_orbit[0])
+        
+        # Define the position of the Hotspot in Cartesian coordinates
+        x0_blob = r_orbit_blob*mp.sin(omega_orbit_blob*t_obs + phi_orbit_blob)
+        y0_blob = r_orbit_blob*mp.cos(omega_orbit_blob*t_obs + phi_orbit_blob)
+        z0_blob = uz0_blob*(t_obs - t_obs_orbit[0])
+        
+        # Define the 3-Velocity of the Hot Spot in Boyer-Lindquist coordinates
+        
+        drdt = (2*(t_obs - t_obs_orbit[0])*uz0_blob**2 + (8*a**2*(t_obs - t_obs_orbit[0])*uz0_blob**2 + 4*(t_obs - t_obs_orbit[0])*uz0_blob**2*(-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2))/(2*np.sqrt(4*a**2*(t_obs - t_obs_orbit[0])**2*uz0_blob**2 + (-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2)**2)) )/ (2*np.sqrt(2)*np.sqrt(-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + np.sqrt(4*a**2*(t_obs - t_obs_orbit[0])**2*uz0_blob**2 + (-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2)**2) ) )
+        dthetadt = -((-(( (t_obs - t_obs_orbit[0])*uz0_blob*(2*(t_obs - t_obs_orbit[0])*uz0_blob**2 + (8*a**2*(t_obs - t_obs_orbit[0])*uz0_blob**2 + 4*(t_obs - t_obs_orbit[0])*uz0_blob**2*(-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2) )/( 2*np.sqrt(4*a**2*(t_obs - t_obs_orbit[0])**2*uz0_blob**2 + (-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2)**2) ) ) )/( np.sqrt(2)*(-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + np.sqrt(4*a**2*(t_obs - t_obs_orbit[0])**2*uz0_blob**2 + (-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2)**2) )**(3/2) ) ) + (np.sqrt(2)*uz0_blob)/(np.sqrt(-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + np.sqrt(4*a**2*(t_obs - t_obs_orbit[0])**2*uz0_blob**2 + (-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2)**2 ) )) )/ (np.sqrt( 1 - (2*(t_obs - t_obs_orbit[0])**2*uz0_blob**2)/(-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + np.sqrt( 4*a**2*(t_obs - t_obs_orbit[0])**2*uz0_blob**2 + (-a**2 + (t_obs - t_obs_orbit[0])**2*uz0_blob**2 + r_orbit_blob**2*np.cos(omega_orbit_blob*t_obs + phi_orbit_blob)**2 + r_orbit_blob**2*np.sin(omega_orbit_blob*t_obs + phi_orbit_blob)**2)**2 )) )) )
+        dphidt = omega_orbit_blob
+        
+        ur_3 = grr_down(r_orbit_blob, theta_orbit_blob)*drdt
+        utheta_3 = gthetatheta_down(r_orbit_blob, theta_orbit_blob)*dthetadt
+        uphi_3 = gphiphi_down(r_orbit_blob, theta_orbit_blob)*dphidt
+
+
+    # Define the 4-Velocity of the Hotspot in Boyer-Lindquist coordinates
+   
+    summ = gphiphi_up(r_orbit_blob,theta_orbit_blob)*uphi_3**2 + gtphi_up(r_orbit_blob, theta_orbit_blob)*uphi_3 + gtt_up(r_orbit_blob, theta_orbit_blob) + grr_up(r_orbit_blob, theta_orbit_blob)*ur_3**2 + gthetatheta_up(r_orbit_blob, theta_orbit_blob)*utheta_3**2
+    tdotin = (-summ)**(-0.5)
+    
+    ut_4 = tdotin
+    ur_4 = tdotin*drdt
+    uphi_4 = tdotin*dphidt
+    utheta_4 = tdotin*dthetadt
+    
+    # Run the radiative transfer scheme
+    for grid_num in range(0, N_sub):
+            
+        small_grid = divided_grid[grid_num]
+    
+        if __name__ == '__main__':
+                    
+            # Define the number of processes
+            workers = int(mproc.cpu_count()/2)
+            
+            with Pool(workers) as pool:
+                # Execute tasks in order
+                for result in pool.starmap(ray_tracing, [(grid_num, index) for index in range(0, len(small_grid))]):
+                    print('writing')
+                    if len(result) > 0:
+                        # Save the data and the related timestamps
+                        f.write(f"\n{result[0][0]:<18}\t{result[0][1]:<18}\t{result[0][2]:<18}\t{result[0][3]:<18}\t{result[0][4]:<18}\t{result[0][5]:<18}\t{result[0][6]:<18}\t{result[0][7]:<18}\t{result[0][8]:<18}\t{result[0][9]:<18}\t{result[0][10]:<18}\t{result[0][11]:<18}\t{result[0][12]:<18}\t{result[0][13]:<18}")
+
+
+# Print error message if needed (end of runs)
+if total_error!=0:
+    print("Carter's constant changed in one of the runs!")
+    
+# The last lines of the file contain the parameters for the simulation
+f.write('\nThe parameters for this specific simulation read:')
+f.write(f'\n{"M_BH":<13}\t{"a_BH":<13}\t{"r0_obs":<15}\t{"θ0_obs":<15}\t{"φ0_obs":<15}\t{"N_grid_points":<20}\t{"Radius_blob":<20}\t{"r_rad":<20}\t{"r_orbit_blob":<20}\t{"θ_orbit_blob":<20}\t{"φ_orbit_blob":<20}\t{"T_orbit_blob":<20}\t{"rot":<10}\t{"v_obs":<20}\t{"z_0_blob":<20}\t{"helix":<20}') 
+
+theta0_obs_file = round(theta0_obs*180/mp.pi, 1)
+phi0_obs_file = round(phi0_obs*180/mp.pi, 1)
+theta_orbit_blob_file = round(theta_orbit_blob*180/mp.pi, 1)
+phi_orbit_blob_file = round(phi_orbit_blob*180/mp.pi, 1)
+
+f.write(f'\n{M:<13}\t{a:<13}\t{r0_obs:<15}\t{theta0_obs_file:<15}\t{phi0_obs_file:<15}\t{Nmax:<20}\t{Radius_blob:<20}\t{r_rad:<20}\t{r_orbit_blob:<20}\t{theta_orbit_blob_file:<20}\t{phi_orbit_blob_file:<20}\t{T_orbit_blob:<20}\t{rot:<10}\t{v_obs:<20}\t{z0_blob:<20}\t{helix:<20}')
+
+# Close the file
+f.close()
+
+# Declare the file
+file = 'HotSpot_Emission.txt'
+
+# Read the data from the file
+df = pd.read_csv(file, delimiter='\t', engine = 'python', header=0, encoding='utf-8', skipfooter = 3)
+df = df.to_numpy()
+
+t_data = df[:,0]
+x_data = df[:,1]
+y_data = df[:,2]
+z_data = df[:,3]
+t_left = df[:,4]
+r_left = df[:,5]
+theta_left = df[:,6]
+phi_left = df[:,7]
+pr_left = df[:,8]
+ptheta_left = df[:,9]
+tauv_data = df[:,10]
+Iv_data = df[:,11]
+g_data = df[:,12]
+in_plasmoid = df[:,13]
+
+# Read the simulation parameters
+skip_rows = len(t_data) + 2
+
+df1 = pd.read_csv(file, delimiter='\t', engine = 'python', header=0, encoding='utf-8', skiprows= skip_rows)
+df1 = df1.to_numpy()
+
+M = df1[0][0]
+a = df1[0][1]
+r0 = df1[0][2]
+theta0 = df1[0][3]
+phi0 = df1[0][4]
+N_grid = df1[0][5]
+r_spot = df1[0][6]
+r_rad = df1[0][7]
+r_orbit = df1[0][8]
+theta_orbit = df1[0][9]
+phi_orbit = df1[0][10]
+T_orbit = df1[0][11]
+rot = df1[0][12]
+v_obs = df1[0][13]
+z_max = df1[0][14]
+helix = df1[0][15]
+
+# Initialize the Normalized Specific Intensity list
+Iv_norm = []
+
+# Run a loop for the observations
+for t_plot in t_obs_orbit:
+    for index in range(0, len(t_data)):
+        if t_data[index] == t_plot:
+            
+            # Save the Specific Intensity
+            Iv_norm.append(Iv_data[index])
+
+# Normalize the Specific Intensity 
+Iv_max = np.max(Iv_norm)
+Iv_min = np.min(Iv_norm)
+
+Iv_norm = (Iv_norm - Iv_min)/(Iv_max - Iv_min)
+
+# Initialize np.array of the results
+results = np.array([t_data[0], x_data[0], y_data[0], z_data[0], t_left[0], r_left[0], theta_left[0], phi_left[0], pr_left[0], ptheta_left[0], tauv_data[0], Iv_norm[0], g_data[0], in_plasmoid[0]])
+
+for index in range(0, len(Iv_data)):
+    results = np.vstack((results, [t_data[index], x_data[index], y_data[index], z_data[index], t_left[index], r_left[index], theta_left[index], phi_left[index], pr_left[index], ptheta_left[index], tauv_data[index], Iv_norm[index], g_data[index], in_plasmoid[index]]))
+
+# Remove the intialization row
+results = results[1:]
+
+# Create new file 
+f = open('HotSpot_Emission.txt','w',encoding='utf-8')
+f.write(f'{"t_obs":<18}\t{"x0_ray":<18}\t{"y0_ray":<18}\t{"z0_ray":<18}\t{"t_left_plasmoid":<18}\t{"r_left_plasmoid":<18}\t{"theta_left_plasmoid":<18}\t{"phi_left_plasmoid":<18}\t{"pr_left_plasmoid":<18}\t{"ptheta_left_plasmoid":<18}\t{"tauv_left_plasmoid":<18}\t{"Iv_left_plasmoid":<18}\t{"g_redsh":<18}\t{"in_plasmoid":<10}')
+    
+# Save the Normalized Specific Intensity in the file
+for row in range(len(results)):
+        f.write(f"\n{results[row][0]:<18}\t{results[row][1]:<18}\t{results[row][2]:<18}\t{results[row][3]:<18}\t{results[row][4]:<18}\t{results[row][5]:<18}\t{results[row][6]:<18}\t{results[row][7]:<18}\t{results[row][8]:<18}\t{results[row][9]:<18}\t{results[row][10]:<18}\t{results[row][11]:<18}\t{results[row][12]:<18}\t{results[row][13]:<18}")
+
+# The last lines of the file contain the parameters for the simulation
+f.write('\nThe parameters for this specific simulation read:')
+f.write(f'\n{"M_BH":<13}\t{"a_BH":<13}\t{"r0_obs":<15}\t{"θ0_obs":<15}\t{"φ0_obs":<15}\t{"N_grid_points":<20}\t{"Radius_blob":<20}\t{"r_rad":<20}\t{"r_orbit_blob":<20}\t{"θ_orbit_blob":<20}\t{"φ_orbit_blob":<20}\t{"T_orbit_blob":<20}\t{"rot":<10}\t{"v_obs":<20}\t{"z_0_blob":<20}\t{"helix":<20}') 
+f.write(f'\n{M:<13}\t{a:<13}\t{r0:<15}\t{theta0:<15}\t{phi0:<15}\t{N_grid:<20}\t{r_spot:<20}\t{r_rad:<20}\t{r_orbit:<20}\t{theta_orbit:<20}\t{phi_orbit:<20}\t{T_orbit:<20}\t{rot:<10}\t{v_obs:<20}\t{z_max:<20}\t{helix:<20}')
+
+# Close the file
+f.close()
