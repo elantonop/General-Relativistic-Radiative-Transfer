@@ -1,0 +1,92 @@
+# Set up the figure 
+fig = plt.figure(figsize = (13,10))
+
+# Plot axes
+ax = plt.axes() 
+
+# Set axes labels
+ax.set_xlabel('x $[r_G]$', fontsize = 22)
+ax.set_ylabel('y $[r_G]$', fontsize = 22)
+
+# Set maximum x-y value
+maxlim = 15
+
+# Set axes limits
+plt.xlim([-maxlim, maxlim])
+plt.ylim([-maxlim, maxlim])
+
+ax.tick_params(axis='x', labelsize=16)
+ax.tick_params(axis='y', labelsize=16)
+
+# Declare the specific file
+file = 'HotSpot_Emission.txt'
+
+# Read the data from the file
+df = pd.read_csv(file, delimiter='\t', engine = 'python', header=0, encoding='utf-8', skipfooter = 3)
+df = df.to_numpy()
+
+t_obs = df[:,0]
+x_data = df[:,1]
+y_data = df[:,2]
+t_data = df[:,4]
+tauv_data = df[:,10]
+Iv_data = df[:,11]
+g_data = df[:,12]
+#in_plasmoid_data = df[:,13]
+
+# Read the parameters of the simulation
+skip_rows = len(t_obs) + 2
+
+df1 = pd.read_csv(file, delimiter='\t', engine = 'python', header=0, encoding='utf-8', skiprows= skip_rows)
+df1 = df1.to_numpy()
+
+a = df1[0][1]
+theta0 = df1[0][3]
+phi0 = df1[0][4]
+N_grid = df1[0][5]
+r_rad = df1[0][7]
+v_obs = df1[0][13]
+
+# Get the distinct observational timestamps
+t_i = [t_obs[0]]
+
+for t in t_obs:
+    if t != t_i[-1]:
+        t_i.append(t)
+
+# Choose the value of t_obs for the plot
+i_plot = 0
+t_plot = t_i[i_plot] 
+print('t_plot=',t_plot)
+
+# Initialize the plotting np.array 
+results = np.array([t_data[0], x_data[0], y_data[0], tauv_data[0], Iv_data[0], g_data[0]])
+
+for index in range(0, len(t_obs)):
+    if t_obs[index] == t_plot:
+        results = np.vstack((results, [t_data[index], x_data[index], y_data[index], tauv_data[index], Iv_data[index], g_data[index]]))
+
+# Remove the intialization row
+results = results[1:]
+
+x_plot = results[:,1]
+y_plot = results[:,2]
+Iv_plot = results[:,4]
+g_plot = results[:,5]
+
+# c Sequence
+c = Iv_plot
+
+plt.scatter(x_plot, y_plot, c=c, cmap='hot')
+
+cbar = plt.colorbar()
+cbar.ax.tick_params(labelsize = 15)
+cbar.set_label('Intensity $I_v$ $[$ $erg$ $/$ $Hz$ $s$ $sterad$ $]$', fontsize = 22)
+
+# Set plot title
+if a == 0 or abs(a) == 0.001:
+    plt.title(f'Hot Spot orbit around a Schwarzschild Black Hole, $a=0.0$, $θ_0$={theta0:.5}\N{DEGREE SIGN}', fontsize = 21, x = 0.53, y = 1.04)
+else:  
+    plt.title(f'Hot Spot orbiting a Kerr Black Hole, a={a}, $θ_0$={theta0:.5}\N{DEGREE SIGN}', fontsize = 22, x = 0.53, y = 1.03)
+
+plt.show()
