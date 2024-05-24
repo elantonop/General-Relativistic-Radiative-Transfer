@@ -4,8 +4,12 @@ Code -> Setup and run the General Relativistic Radiative Transfer scheme
 2. Functions -> Define Functions
 4. GRRT -> Import General Relativistic Radiative Transfer Function
 5. Setup -> Determine the simulation parameters / Run the General Relativistic Radiative Transfer scheme
+
+   
             File Name: HotSpot_Emission.txt
+   
             First Line: Parameter Labels
+   
             File Output: t_obs -> Observation Time
                          x0_ray / y0_ray / z0_ray -> Pixel Coordinates
                          t_left_plasmoid / r_left_plasmoid / theta_left_plasmoid /	phi_left_plasmoid /	pr_left_plasmoid / ptheta_left_plasmoid -> Boyer-Lindquist Coordinates & Momenta when the Photon ray exits the Hot Spot Radiative Sphere 
