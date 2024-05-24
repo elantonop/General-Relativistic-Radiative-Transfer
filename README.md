@@ -2,8 +2,8 @@ Code -> Setup and run the General Relativistic Radiative Transfer scheme
 
 1. Libraries -> Import Required Libraries
 2. Functions -> Define Functions
-3. GRRT -> Import General Relativistic Radiative Transfer Function
-4. Setup -> Determine the simulation parameters / Run the General Relativistic Radiative Transfer scheme
+4. GRRT -> Import General Relativistic Radiative Transfer Function
+5. Setup -> Determine the simulation parameters / Run the General Relativistic Radiative Transfer scheme
             File Name: HotSpot_Emission.txt
             First Line: Parameter Labels
             File Output: t_obs -> Observation Time
